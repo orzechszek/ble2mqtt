@@ -49,6 +49,11 @@
 - **Xiaomi LYWSD03MMC with custom ATC firmware (xiaomilywsd_atc)**
   - supported both atc1441 and pvvx formats
 - **Qingping CGDK2 (type: qingpingCGDK2)**
+- **RuuviTag (type: ruuvitag)**
+- **RuuviTag Pro 2in1 (type: ruuvitag_pro_2in1)**
+- **RuuviTag Pro 3in1 (type: ruuvitag_pro_3in1)**
+- **RuuviTag Pro 4in1 (type: ruuvitag)**
+- **Govee H5074 (type: govee_ht)**
 
 ### Air sensors
 - **Vson WP6003 (type: wp6003)**
@@ -75,6 +80,10 @@
   The adapter uses holiday mode to control temperature as thermostat. You cannot 
   use this feature in the official app while ble2mqtt is working.
 
+### Vacuum cleaners
+
+- **Roidmi NEX2 Pro (type: roidmi_cleaner)**
+
 ### Battery voltage meters
 
 - **BM2 car battery voltage meter (type: voltage_bm2)**
@@ -96,6 +105,8 @@ To use connection to the device provide `"passive": false` parameter.
 **Supported devices in passive mode:**
 - Xiaomi MJ_HT_V1 (xiaomihtv1)
 - Xiaomi LYWSD03MMC with custom ATC firmware (xiaomilywsd_atc)
+- RuuviTag (ruuvitag/ruuvitag_pro_2in1/ruuvitag_pro_3in1)
+- Govee temperature/humidity sensors (govee_ht)
 - Any device as presence tracker
 
 ## Manual pairing in Linux
@@ -195,7 +206,8 @@ The configuration file is a JSON with the following content:
         },
         {
             "address": "11:22:33:aa:bb:dd",
-            "type": "xiaomihtv1"
+            "type": "xiaomihtv1",
+            "interval": 60
         },
         {
             "address": "11:22:34:aa:bb:dd",
@@ -208,7 +220,8 @@ The configuration file is a JSON with the following content:
         },
         {
             "address": "11:22:33:aa:bb:ff",
-            "type": "xiaomilywsd_atc"
+            "type": "xiaomilywsd_atc",
+            "interval": 60
         },
         {
             "address": "11:22:33:aa:aa:aa",
@@ -227,6 +240,15 @@ The configuration file is a JSON with the following content:
             "address": "11:22:33:aa:aa:bd",
             "type": "miflora",
             "interval": 500
+        },
+        {
+            "address": "11:22:33:aa:aa:be",
+            "type": "ruuvitag",
+            "interval": 60
+        },
+        {
+            "address": "11:22:33:aa:aa:0a",
+            "type": "roidmi_cleaner"
         }
     ]
 }
@@ -274,6 +296,22 @@ sudo systemctl start ble2mqtt
 ```
 
 ## Installation on OpenWRT
+
+### OpenWRT 23.05 and later
+
+Create the configuration file in /etc/ble2mqtt.json and
+append your devices.
+
+Execute the following commands in the terminal:
+
+```sh
+opkg update
+opkg install python3-ble2mqtt
+/etc/init.d/ble2mqtt enable
+/etc/init.d/ble2mqtt start
+```
+
+### OpenWRT 22.03 and earlier
 
 Execute the following commands in the terminal:
 

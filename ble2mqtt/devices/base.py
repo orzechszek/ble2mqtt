@@ -5,6 +5,7 @@ import logging
 import typing as ty
 import uuid
 from collections import defaultdict, namedtuple
+from dataclasses import asdict, dataclass
 from enum import Enum
 
 from bleak import BleakClient, BleakError
@@ -27,6 +28,7 @@ registered_device_types = {}
 
 
 BINARY_SENSOR_DOMAIN = 'binary_sensor'
+BUTTON_DOMAIN = 'button'
 CLIMATE_DOMAIN = 'climate'
 COVER_DOMAIN = 'cover'
 DEVICE_TRACKER_DOMAIN = 'device_tracker'
@@ -188,7 +190,7 @@ class Device(BaseDevice, abc.ABC):
     CONNECTION_FAILURES_LIMIT = 100
     RECONNECTION_SLEEP_INTERVAL = 60
     ACTIVE_SLEEP_INTERVAL = 60
-    PASSIVE_SLEEP_INTERVAL = 60
+    DEFAULT_PASSIVE_SLEEP_INTERVAL = 60
     # deprecated
     LINKQUALITY_TOPIC: ty.Optional[str] = None
     STATE_TOPIC: str = DEFAULT_STATE_TOPIC
@@ -200,6 +202,10 @@ class Device(BaseDevice, abc.ABC):
         super().__init__(*args, **kwargs)
         self.message_queue: aio.Queue = aio.Queue(**get_loop_param(self._loop))
         self.mac = mac.lower()
+        self.passive_sleep_interval = int(
+            kwargs.pop('interval', self.DEFAULT_PASSIVE_SLEEP_INTERVAL),
+        )
+        self._suggested_area = kwargs.pop('suggested_area', None)
         self.friendly_name = kwargs.pop('friendly_name', None)
         self._model = None
         self._version = None
@@ -208,6 +214,7 @@ class Device(BaseDevice, abc.ABC):
         self._advertisement_seen = aio.Event()
 
         assert set(self.entities.keys()) <= {
+            BUTTON_DOMAIN,
             BINARY_SENSOR_DOMAIN,
             CLIMATE_DOMAIN,
             COVER_DOMAIN,
@@ -257,8 +264,8 @@ class Device(BaseDevice, abc.ABC):
         postfix_domains = {
             self.SET_POSTFIX:
                 [
-                    CLIMATE_DOMAIN, COVER_DOMAIN, LIGHT_DOMAIN, SELECT_DOMAIN,
-                    SWITCH_DOMAIN,
+                    BUTTON_DOMAIN, CLIMATE_DOMAIN, COVER_DOMAIN, LIGHT_DOMAIN,
+                    SELECT_DOMAIN, SWITCH_DOMAIN,
                 ],
             self.SET_POSITION_POSTFIX: [COVER_DOMAIN],
             self.SET_MODE_POSTFIX: [CLIMATE_DOMAIN],
@@ -312,6 +319,10 @@ class Device(BaseDevice, abc.ABC):
         # can change over time. Don't use it as an identifier
         parts = [self.manufacturer, self.model, self.friendly_id]
         return '_'.join([p.replace(' ', '_') for p in parts if p])
+
+    @property
+    def suggested_area(self):
+        return self._suggested_area
 
     @property
     def rssi(self):
@@ -516,12 +527,19 @@ class Sensor(Device, abc.ABC):
         if isinstance(version, (bytes, bytearray)):
             self._version = version.decode().strip('\0')
 
-    def get_entity_map(self):
+    def get_values_by_entities(self) -> ty.Dict[str, ty.Any]:
         state = {}
+        if self._state is None:
+            return {}
+
+        if hasattr(self._state, 'as_dict'):
+            state_dict = self._state.as_dict()
+        else:
+            state_dict = asdict(self._state)
         for domain, entities in self.entities.items():
             for entity in entities:
                 sensor_name = entity['name']
-                value = getattr(self._state, sensor_name, None)
+                value = state_dict.get(sensor_name, None)
                 if value is not None:
                     state[sensor_name] = self.transform_value(value)
         if self.REQUIRED_VALUES and not any(
@@ -529,16 +547,6 @@ class Sensor(Device, abc.ABC):
         ):
             return {}
         return state
-
-    async def _notify_state(self, publish_topic):
-        _LOGGER.info(f'[{self}] send state={self._state}')
-        state = self.get_entity_map()
-        if state:
-            state['linkquality'] = self.linkquality
-            await publish_topic(
-                topic=self._get_topic(self.STATE_TOPIC),
-                value=json.dumps(state),
-            )
 
     async def do_active_loop(self, publish_topic):
         await self._notify_state(publish_topic)
@@ -573,12 +581,48 @@ class Sensor(Device, abc.ABC):
 
             await self.update_device_data(send_config)
             await self.do_passive_loop(publish_topic)
-            await aio.sleep(self.PASSIVE_SLEEP_INTERVAL)
+            await aio.sleep(self.passive_sleep_interval)
 
     async def handle(self, *args, **kwargs):
         if self.is_passive:
             return await self.handle_passive(*args, **kwargs)
         return await self.handle_active(*args, **kwargs)
+
+
+@dataclass
+class HumidityTemperatureSensorState:
+    battery: int = 0
+    temperature: float = 0
+    humidity: float = 0
+
+
+class HumidityTemperatureSensor(Sensor, abc.ABC):
+    SENSOR_CLASS = HumidityTemperatureSensorState
+    # send data only if temperature or humidity is set
+    REQUIRED_VALUES = ('temperature', 'humidity')
+
+    @property
+    def entities(self):
+        return {
+            SENSOR_DOMAIN: [
+                {
+                    'name': 'temperature',
+                    'device_class': 'temperature',
+                    'unit_of_measurement': '\u00b0C',
+                },
+                {
+                    'name': 'humidity',
+                    'device_class': 'humidity',
+                    'unit_of_measurement': '%',
+                },
+                {
+                    'name': 'battery',
+                    'device_class': 'battery',
+                    'unit_of_measurement': '%',
+                    'entity_category': 'diagnostic',
+                },
+            ],
+        }
 
 
 class SubscribeAndSetDataMixin:

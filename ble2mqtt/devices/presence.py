@@ -31,7 +31,7 @@ class Presence(Sensor):
     SUPPORT_ACTIVE = False
     MANUFACTURER = 'Generic'
     THRESHOLD = 300  # if no activity more than THRESHOLD, consider presence=OFF
-    PASSIVE_SLEEP_INTERVAL = 1
+    DEFAULT_PASSIVE_SLEEP_INTERVAL = 1
     SEND_DATA_PERIOD = 60
     SEND_DATA_PERIOD_ACTIVATION = True
 
